@@ -1,0 +1,190 @@
+---
+interface Props {
+	title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="description" content="AI Accountability Coach - Track your goals with AI-powered support" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+		<!-- Prevent flash of wrong theme -->
+		<script is:inline>
+			(function() {
+				try {
+					const data = localStorage.getItem('aac_data_v4');
+					if (data) {
+						const parsed = JSON.parse(data);
+						const theme = parsed.settings?.theme || 'dark';
+						document.documentElement.setAttribute('data-theme', theme);
+					}
+				} catch {}
+			})();
+		</script>
+	</head>
+	<body>
+		<slot />
+
+		<!-- =============================================
+		     AI Check-In Reminder Notification Banner
+		     ============================================= -->
+		<div id="checkin-notification" class="checkin-notification" role="alert" aria-live="polite" style="display: none;">
+			<div class="checkin-notification-header">
+				<div class="checkin-notification-icon">
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+						<path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+					</svg>
+				</div>
+				<span class="checkin-notification-label">Accountability Check-In</span>
+				<button id="checkin-snooze-btn" class="checkin-close-btn" aria-label="Dismiss notification">
+					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+						<line x1="18" y1="6" x2="6" y2="18"></line>
+						<line x1="6" y1="6" x2="18" y2="18"></line>
+					</svg>
+				</button>
+			</div>
+			<p id="checkin-notification-msg" class="checkin-notification-msg"></p>
+			<div class="checkin-notification-actions">
+				<button id="checkin-start-btn" class="checkin-btn-primary">Start Check-In</button>
+				<button id="checkin-snooze-btn-2" class="checkin-btn-secondary">Snooze</button>
+			</div>
+		</div>
+
+		<!-- Floating demo trigger button -->\n\t\t<button id="checkin-demo-trigger" class="checkin-demo-trigger" title="Trigger check-in reminder (Shift+N)" aria-label="Manually trigger check-in notification">
+			<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+				<path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+			</svg>
+			Remind me
+		</button>
+
+		<script is:inline>
+			(function() {
+				// ============================================================
+				// DEMO SETTING: Change this value to adjust the reminder delay
+				// e.g. 5000 = 5 seconds, 30000 = 30 seconds, 60000 = 1 minute
+				// ============================================================
+				const REMINDER_DELAY_MS = 30000;
+
+				function buildMessage() {
+					try {
+						const raw = localStorage.getItem('aac_data_v3');
+						if (!raw) return null;
+						const data = JSON.parse(raw);
+
+						const name = data.user?.name ? data.user.name.split(' ')[0] : null;
+						const projects = data.projects || [];
+						if (projects.length === 0) return null;
+
+						// Count all incomplete tasks across all projects
+						let totalPending = 0;
+						projects.forEach(function(p) {
+							(p.tasks || []).forEach(function(t) {
+								if (!t.completed) totalPending++;
+							});
+						});
+
+						// Find the first project with pending tasks for context
+						const activeProject = projects.find(function(p) {
+							return (p.tasks || []).some(function(t) { return !t.completed; });
+						}) || projects[0];
+
+						const greeting = name ? ('Hey ' + name + '! 👋') : 'Hey there! 👋';
+						const taskPart = totalPending > 0
+							? ('You still have ' + totalPending + ' pending task' + (totalPending > 1 ? 's' : '') + ' on "' + activeProject.title + '". How\'re you getting on?')
+							: ('You\'re all caught up on tasks — great work! Want to reflect on your progress?');
+
+						return greeting + ' ' + taskPart;
+					} catch(e) {
+						return null;
+					}
+				}
+
+				function showNotification() {
+					const banner = document.getElementById('checkin-notification');
+					const msgEl = document.getElementById('checkin-notification-msg');
+					if (!banner || !msgEl) return;
+
+					// Reset hiding class if re-triggering
+					banner.classList.remove('checkin-notification-hiding');
+
+					const personalMsg = buildMessage();
+					msgEl.textContent = personalMsg || 'Your AI Coach is checking in — how are you progressing on your goals? Let\'s do a quick check-in! 💪';
+
+					banner.style.display = 'block';
+					requestAnimationFrame(function() {
+						requestAnimationFrame(function() {
+							banner.classList.add('checkin-notification-visible');
+						});
+					});
+				}
+
+				function dismissNotification() {
+					const banner = document.getElementById('checkin-notification');
+					if (!banner) return;
+					banner.classList.remove('checkin-notification-visible');
+					banner.classList.add('checkin-notification-hiding');
+					sessionStorage.setItem('aac_reminder_snoozed', '1');
+					setTimeout(function() { banner.style.display = 'none'; }, 400);
+				}
+
+				// Wire up buttons after DOM is ready
+				function wireButtons() {
+					document.getElementById('checkin-snooze-btn')?.addEventListener('click', dismissNotification);
+					document.getElementById('checkin-snooze-btn-2')?.addEventListener('click', dismissNotification);
+					document.getElementById('checkin-start-btn')?.addEventListener('click', function() {
+						sessionStorage.setItem('aac_reminder_snoozed', '1');
+						window.location.href = '/chat';
+					});
+
+					// Demo trigger button
+					document.getElementById('checkin-demo-trigger')?.addEventListener('click', function() {
+						sessionStorage.removeItem('aac_reminder_snoozed');
+						showNotification();
+					});
+
+					// Keyboard shortcut: Shift+N
+					document.addEventListener('keydown', function(e) {
+						if (e.shiftKey && e.key === 'N') {
+							e.preventDefault();
+							sessionStorage.removeItem('aac_reminder_snoozed');
+							showNotification();
+						}
+					});
+				}
+
+				// Expose globally for console use: window.triggerCheckin()
+				window.triggerCheckin = function() {
+					sessionStorage.removeItem('aac_reminder_snoozed');
+					showNotification();
+				};
+
+				if (document.readyState === 'loading') {
+					document.addEventListener('DOMContentLoaded', wireButtons);
+				} else {
+					wireButtons();
+				}
+
+				// Auto-fire disabled: user requested to ONLY trigger manually via "Remind me"
+				// if (!sessionStorage.getItem('aac_reminder_snoozed')) {
+				// 	setTimeout(showNotification, REMINDER_DELAY_MS);
+				// }
+			})();
+		</script>
+	</body>
+</html>
+
+<style is:global>
+	@import '../styles/global.css';
+</style>

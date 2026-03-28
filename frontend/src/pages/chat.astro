@@ -1,0 +1,397 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Chat | AI Accountability Coach">
+	<div class="page-wrapper container" style="padding: 0; display: flex; flex-direction: column; height: 100vh; position: relative; background: var(--bg-dark); border-left: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle);">
+		<!-- Header -->
+		<header style="display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-darker);">
+			<a href="/" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; background: var(--bg-glass); color: var(--text-secondary); transition: all 0.15s ease;">
+				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<polyline points="15 18 9 12 15 6"></polyline>
+				</svg>
+			</a>
+			<div style="flex: 1;">
+				<h1 style="font-size: 1rem; font-weight: 600;">Accountability Coach</h1>
+				<p style="font-size: 0.75rem; color: var(--text-muted);">Your AI-powered partner</p>
+			</div>
+			<div id="status-indicator" style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-muted);">
+				<span style="width: 8px; height: 8px; background: #4ade80; border-radius: 50%;"></span>
+				Online
+			</div>
+		</header>
+
+		<!-- Project Context Selector -->
+		<div style="padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-card);">
+			<div style="width: 100%; margin: 0 auto;">
+				<select id="project-select" style="width: 100%; padding: 10px 14px; background: var(--bg-glass); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary); font-size: 0.875rem; outline: none; cursor: pointer;">
+					<option value="">General Chat (No project context)</option>
+					<!-- Projects will be populated here -->
+				</select>
+			</div>
+		</div>
+
+		<!-- Chat Messages Container -->
+		<div id="chat-messages" class="chat-messages" style="flex: 1; overflow-y: auto;">
+			<div class="chat-messages-inner">
+				<!-- Welcome message -->
+				<div class="chat-bubble chat-bubble-coach">
+					<strong style="display: block; margin-bottom: 4px; color: var(--accent-primary);">👋 Hey there!</strong>
+					I'm your AI Accountability Coach. I'm here to help you stay on track with your goals, break down tasks, and keep you motivated.
+					<br><br>
+					Select a project above to continue our conversation, or start fresh!
+				</div>
+			</div>
+		</div>
+
+		<!-- Typing Indicator (hidden by default) -->
+		<div id="typing-indicator" class="typing-indicator-wrapper" style="display: none;">
+			<div class="chat-bubble chat-bubble-coach typing-indicator">
+				<span></span>
+				<span></span>
+				<span></span>
+			</div>
+		</div>
+
+		<!-- Input Area -->
+		<div class="chat-input-wrapper">
+			<div style="position: relative; width: 100%; margin: 0 auto;">
+				<input 
+					type="text" 
+					id="chat-input" 
+					class="chat-input"
+					placeholder="Type your message..."
+					autocomplete="off"
+				/>
+				<button id="btn-send" class="chat-send-btn" title="Send message">
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<line x1="22" y1="2" x2="11" y2="13"></line>
+						<polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+					</svg>
+				</button>
+			</div>
+		</div>
+	</div>
+</Layout>
+
+<script>
+    import { storage } from '../store/storage.js';
+    import { marked } from 'marked';
+    
+    const API_URL = 'http://localhost:8000/api';
+    
+    // UI Refs
+    const ui = {
+        title: document.getElementById('project-title'), // This element is not in the current HTML, but added as per instruction
+        messages: document.getElementById('chat-messages'),
+        messagesInner: document.querySelector('.chat-messages-inner'), // Kept for compatibility with existing HTML structure
+        input: document.getElementById('chat-input'),
+        btnSend: document.getElementById('btn-send'),
+        typingIndicator: document.getElementById('typing-indicator'),
+        tabChat: document.getElementById('tab-chat'), // This element is not in the current HTML, but added as per instruction
+        tabTasks: document.getElementById('tab-tasks'), // This element is not in the current HTML, but added as per instruction
+        panelChat: document.getElementById('panel-chat'), // This element is not in the current HTML, but added as per instruction
+        panelTasks: document.getElementById('panel-tasks') // This element is not in the current HTML, but added as per instruction
+    };
+
+    let isLoading = false;
+    let autoThreadId = localStorage.getItem('aac_global_thread_id'); // Global Chat ID
+
+    // Initial Load
+    (async () => {
+        // ALWAYS fetch the active thread from server (Source of Truth)
+        try {
+            const res = await fetch(`${API_URL}/thread/active`);
+            if (res.ok) {
+                const data = await res.json();
+                autoThreadId = data.id;
+                // Update local storage just in case other parts use it synchronously
+                localStorage.setItem('aac_global_thread_id', autoThreadId);
+                console.log("Connected to Thread:", autoThreadId);
+            }
+        } catch (e) {
+            console.error("Failed to get active thread", e);
+        }
+        
+        loadHistory();
+    })();
+
+    // Tab switching (UI elements for tabs are not in the provided HTML, but the logic is included as per instruction)
+    ui.tabChat && ui.tabChat.addEventListener('click', () => switchTab('chat'));
+    ui.tabTasks && ui.tabTasks.addEventListener('click', () => switchTab('tasks'));
+
+    function switchTab(tab) {
+        if (tab === 'chat') {
+            ui.tabChat.classList.add('active');
+            ui.tabTasks.classList.remove('active');
+            ui.panelChat.classList.add('active');
+            ui.panelTasks.classList.remove('active');
+        } else {
+            ui.tabTasks.classList.add('active');
+            ui.tabChat.classList.remove('active');
+            ui.panelTasks.classList.add('active');
+            ui.panelChat.classList.remove('active');
+        }
+    }
+
+    // --- Chat Logic ---
+    function loadHistory() {
+        const history = JSON.parse(localStorage.getItem('aac_chat_history') || '[]');
+        // Clear existing (welcome msg remains in DOM initially?)
+        ui.messagesInner.innerHTML = ''; 
+        
+        if (history.length === 0) {
+            // Welcome message if fresh
+            const welcome = { role: 'assistant', content: "Hey! What's on your mind today?" };
+            appendMessageUI(welcome);
+            saveMessage(welcome);
+        } else {
+            history.forEach(msg => appendMessageUI(msg));
+        }
+        scrollToBottom();
+    }
+
+    function saveMessage(msg) {
+        const history = JSON.parse(localStorage.getItem('aac_chat_history') || '[]');
+        history.push(msg);
+        // Keep last 50 messages to avoid bloat
+		if (history.length > 50) history.shift();
+        localStorage.setItem('aac_chat_history', JSON.stringify(history));
+    }
+
+    function appendMessageUI(msg) {
+        // Remove old 'Read' status if user sends a new one (though strictly 'Read' belongs to the user message)
+        
+        const div = document.createElement('div');
+        const isUser = msg.role === 'user';
+        
+        div.className = `chat-bubble ${isUser ? 'chat-bubble-user' : 'chat-bubble-coach'}`;
+        
+        if (isUser) {
+            div.textContent = msg.content;
+            div.id = `msg-${Date.now()}`; // ID for attaching status
+        } else {
+            // Render Markdown for AI
+            div.innerHTML = marked.parse(msg.content);
+        }
+        
+        ui.messagesInner.appendChild(div); // Changed from ui.messages to ui.messagesInner to match existing HTML structure
+        scrollToBottom();
+        return div;
+    }
+
+    function showReadReceipt(msgElement) {
+        if (!msgElement) return;
+        // Remove existing read receipts to keep it clean? usually only last one matters
+        document.querySelectorAll('.message-status').forEach(el => el.remove());
+
+        const status = document.createElement('div');
+        status.className = 'message-status';
+        status.textContent = 'Read';
+        status.style.cssText = 'font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; text-align: right; margin-right: 4px; opacity: 0; transition: opacity 0.3s ease;';
+        
+        msgElement.insertAdjacentElement('afterend', status);
+        requestAnimationFrame(() => status.style.opacity = '1');
+        scrollToBottom();
+    }
+
+    // Event Listeners for sending messages
+    ui.btnSend.addEventListener('click', () => sendMessage(ui.input.value));
+	ui.input.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			sendMessage(ui.input.value);
+		}
+	});
+
+    async function sendMessage(text) {
+        if (!text.trim() || isLoading) return;
+        ui.input.value = '';
+        
+        const userMsgEl = appendMessageUI({ role: 'user', content: text });
+        saveMessage({ role: 'user', content: text });
+        
+        isLoading = true;
+
+        // Artificial Delays for Human Feel
+        await new Promise(r => setTimeout(r, 800)); 
+        showReadReceipt(userMsgEl);
+
+        await new Promise(r => setTimeout(r, 600)); 
+        showLoading();
+
+        // Prepare Global State
+        const currentState = {
+            user_profile: storage.getUser(),
+            projects: storage.getProjects()
+        };
+
+        const threadId = localStorage.getItem('aac_global_thread_id');
+
+        try {
+            const res = await fetch(`${API_URL}/threads/${threadId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    content: text,
+                    current_state: currentState
+                })
+            });
+            
+            const data = await res.json();
+
+            if (!res.ok) {
+                 throw new Error(data.detail || 'API Error');
+            }
+            
+            // Minimum typing time enforcement
+            await new Promise(r => setTimeout(r, 1000));
+
+            hideLoading();
+            isLoading = false;
+            
+            const aiMsg = { role: 'assistant', content: data.content };
+            appendMessageUI(aiMsg);
+            saveMessage(aiMsg);
+            
+            // Handle tool calls
+            if (data.tool_calls && data.tool_calls.length > 0) {
+                handleToolCalls(data.tool_calls);
+            }
+        } catch (e) {
+            console.error(e);
+            hideLoading();
+            isLoading = false;
+
+            if (threadId) {
+                console.warn('Thread seems broken. Resetting...');
+                localStorage.removeItem('aac_global_thread_id');
+                appendMessageUI({ 
+                    role: 'assistant', 
+                    content: "I encountered a memory glitch. I've reset my connection. Please try sending your message again!" 
+                });
+                return;
+            }
+            appendMessageUI({ role: 'assistant', content: "Sorry, I lost connection. Please check the backend." });
+        }
+    }
+
+    function showLoading() {
+        ui.typingIndicator.style.display = 'flex';
+        scrollToBottom();
+    }
+
+    function hideLoading() {
+        ui.typingIndicator.style.display = 'none';
+    }
+
+    function scrollToBottom() {
+        ui.messages.scrollTop = ui.messages.scrollHeight;
+    }
+
+	function handleToolCalls(toolCalls) {
+		let updated = false;
+
+		toolCalls.forEach(tool => {
+			const args = tool.arguments;
+			console.log('Tool Call:', tool.name, args);
+
+			// 1. Create Project
+			if (tool.name === 'create_project') {
+				storage.addProject(args.title, args.description);
+				updated = true;
+			}
+
+			// 2. Delete Project
+			if (tool.name === 'delete_project') {
+				storage.deleteProject(args.project_id);
+				updated = true;
+			}
+
+			// 3. Update User Profile
+			if (tool.name === 'update_user_profile') {
+				storage.updateUser({
+					...(args.name && { name: args.name }),
+					...(args.goals && { goals: args.goals }),
+					...(args.notes && { notes: args.notes })
+				});
+				updated = true;
+			}
+
+			// 4. Update Project Plan (Tasks)
+			if (tool.name === 'update_project_plan') {
+				const project = storage.getProject(args.project_id);
+				if (project) {
+					const newTasks = args.tasks.map((t, i) => ({
+						...t,
+						id: t.id || Date.now() + i,
+						completed: false,
+						subtasks: t.subtasks || []
+					}));
+					storage.updateProjectTasks(project.id, newTasks);
+					updated = true;
+				}
+			}
+
+			// 5. Add Subtasks
+			if (tool.name === 'add_project_subtasks') {
+				const project = storage.getProject(args.project_id);
+				if (project && project.tasks[args.task_index]) {
+					const task = project.tasks[args.task_index];
+					const subs = args.subtasks.map(s => ({ title: s, completed: false }));
+					task.subtasks = [...(task.subtasks || []), ...subs];
+					storage.updateProjectTasks(project.id, project.tasks);
+					updated = true;
+				}
+			}
+
+			// 6. Complete Task
+			if (tool.name === 'mark_project_task_complete') {
+				const project = storage.getProject(args.project_id);
+				if (project && project.tasks[args.task_index]) {
+					project.tasks[args.task_index].completed = true;
+					storage.updateProjectTasks(project.id, project.tasks);
+					updated = true;
+				}
+			}
+		});
+
+		if (updated) {
+			const notification = document.createElement('div');
+			notification.style.cssText = `text-align: center; padding: 8px; font-size: 0.75rem; color: var(--accent-primary); opacity: 0.8;`;
+			notification.textContent = '✨ Updates applied';
+			ui.messagesInner.appendChild(notification);
+			scrollToBottom();
+		}
+	}
+</script>
+
+<style>
+	/* Centered messages container inside the 480px layout */
+	.chat-messages-inner {
+		width: 100%;
+		padding: 20px;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.typing-indicator-wrapper {
+		width: 100%;
+		padding: 0 20px 16px;
+	}
+
+	/* Override for select element */
+	select option {
+		background: var(--bg-darker);
+		color: var(--text-primary);
+	}
+	
+	/* Smooth back button hover */
+	a:hover {
+		background: var(--bg-card-hover) !important;
+		color: var(--text-primary) !important;
+	}
+
+
+</style>
